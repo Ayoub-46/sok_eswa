@@ -43,6 +43,7 @@ from ..defenses.krum import MKrumServer
 from ..defenses.flame import FlameServer
 from ..defenses.clip_dp import NormClippingServer
 from ..defenses.deepsight import DeepSightServer
+from ..defenses.leadfl_client import LeadFLClient
 
 def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Module]: 
     """Returns the appropriate dataset adapter and model instance."""
@@ -214,6 +215,17 @@ def get_client_instance(
              print(f"Warning: Unknown attack name '{attack_name}' for malicious client {client_id}. Creating BenignClient instead.")
              return BenignClient(**base_client_args) 
     else:
+        defense_cfg = config.get('defense_params', {})
+        defense_enabled = defense_cfg.get('enabled', False)
+        defense_name = defense_cfg.get('name', 'none').lower()
+    
+        # If LeadFL is enabled, benign clients use LeadFLClient
+        if defense_enabled and defense_name == 'leadfl':
+            return LeadFLClient(
+                defense_config=defense_cfg, 
+                **base_client_args
+            )
+        
         fedprox_mu = training_params.get('fedprox_mu', 0.0)
         if fedprox_mu > 0.0:
             print(f"Instantiating FedProx client {client_id} with mu={fedprox_mu}.")
