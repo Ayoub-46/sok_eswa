@@ -132,7 +132,7 @@ def get_client_instance(
     malicious_ids = set(attack_cfg.get('malicious_client_ids', []))
     training_params = config['training_params']
 
-    # --- 1. Define all base arguments for any client ---
+    # 1. Define all base arguments for any client 
     base_client_args = {
         'id': client_id,
         'trainloader': train_loader, 
@@ -148,7 +148,7 @@ def get_client_instance(
         attack_name = attack_cfg.get('name')
         print(f"Instantiating malicious client {client_id} for attack: {attack_name}")
 
-        # --- 2. Create the Trigger object explicitly ---
+        # 2. Create the Trigger object explicitly 
         
         if 'trigger' in attack_cfg:
             trigger_cfg = attack_cfg['trigger']
@@ -198,7 +198,7 @@ def get_client_instance(
         malicious_config['trigger'] = trigger_obj
         malicious_config['seed'] = config.get('seed', 42)
 
-        # --- 3. Create Malicious Client ---
+        # 3. Create Malicious Client 
         if attack_name == 'neurotoxin':
             return NeurotoxinClient(attack_config=malicious_config, **base_client_args)
         elif attack_name == 'a3fl':
@@ -212,7 +212,7 @@ def get_client_instance(
         else:
             # Fallback or error for unknown attack
              print(f"Warning: Unknown attack name '{attack_name}' for malicious client {client_id}. Creating BenignClient instead.")
-             return BenignClient(**base_client_args) # Fallback to benign if attack name unknown
+             return BenignClient(**base_client_args) 
     else:
         fedprox_mu = training_params.get('fedprox_mu', 0.0)
         if fedprox_mu > 0.0:

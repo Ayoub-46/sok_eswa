@@ -15,7 +15,6 @@ def main():
         required=True, 
         help='Path to the YAML configuration file for the experiment.'
     )
-    parser.add_argument('--parallel', action='store_true', help='Run client training in parallel.')
     args = parser.parse_args()
 
     # 2. Load the configuration from the specified YAML file

@@ -53,7 +53,6 @@ class MKrumServer(DefenseMetricsMixin, FedAvgAggregator):
                 client_ids_received=client_ids_received_set,
                 rejected_client_ids=rejected_client_ids
             )
-            # super().aggregate() will average all clients and clear the buffer.
             return super().aggregate()
         
         # 1. Create a stable mapping from index (0...n-1) to client_id
@@ -128,7 +127,7 @@ class MKrumServer(DefenseMetricsMixin, FedAvgAggregator):
                 if k in client_params:
                    acc += client_params[k] * weight
                 
-            averaged[k] = acc # Final averaged param is on CPU
+            averaged[k] = acc 
 
         self.set_params({k: v.to(self.device) for k, v in averaged.items()})
 

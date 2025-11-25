@@ -85,9 +85,10 @@ class NeurotoxinClient(BenignClient):
                 samples, the malicious model weights, and tracked training metrics.
         """
         
-        if not (self.attack_start_round <= round_idx <= self.attack_end_round):
-            print(f"\n--- Neurotoxin Client [{self.id}] behaving benignly for round {round_idx} ---")
-            return super().local_train(epochs, round_idx)
+        attack_active = kwargs.get('attack_active', True)
+
+        if not attack_active or not (self.attack_start_round <= round_idx <= self.attack_end_round):
+             return super().local_train(epochs, round_idx)     
         
         print(f"\n--- Neurotoxin Client [{self.id}] starting hybrid attack for round {round_idx} ---")
 

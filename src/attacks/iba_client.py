@@ -28,8 +28,10 @@ class IBAClient(BenignClient):
 
     def local_train(self, round_idx: int, epochs: int=1, **kwargs) -> Dict[str, Any]:
         """Performs the two-stage IBA attack if within the attack window."""
-        if not (self.attack_start_round <= round_idx <= self.attack_end_round):
-            return super().local_train(epochs, round_idx)
+        attack_active = kwargs.get('attack_active', True)
+
+        if not attack_active or not (self.attack_start_round <= round_idx <= self.attack_end_round):
+             return super().local_train(epochs, round_idx)     
         
         try:
             # 1. Optimize the trigger generator 

@@ -182,12 +182,10 @@ class DarkFedClient(BenignClient):
             optimizer.zero_grad()
             output = benign_model(data)
             
-            # Use the parent's CrossEntropyLoss
             loss = self.loss_fn(output, target) 
             
             loss.backward()
             optimizer.step()
-        # --- End of 1 epoch ---
 
         global_state = global_model.state_dict()
         benign_delta = {
@@ -205,8 +203,10 @@ class DarkFedClient(BenignClient):
 
     def local_train(self, round_idx: int, epochs: int, **kwargs) -> Dict[str, Any]:
         """Performs the True DarkFed attack with caching."""
-        if not (self.attack_start_round <= round_idx <= self.attack_end_round):
-            return super().local_train(round_idx=round_idx, epochs=epochs, **kwargs)
+        attack_active = kwargs.get('attack_active', True)
+
+        if not attack_active or not (self.attack_start_round <= round_idx <= self.attack_end_round):
+             return super().local_train(epochs, round_idx)     
 
         print(f"\n--- TrueDarkFed Client [{self.id}] starting attack for round {round_idx} ---")
         
@@ -263,7 +263,6 @@ class DarkFedClient(BenignClient):
                 # Loss 1: Task Loss
                 task_loss = self.attack_loss_fn(output_logits, labels)
                 
-                # Use cached global state for delta calculation
                 malicious_delta_dev = {
                     name: param - self.cached_global_state_cpu[name].to(self.device)
                     for name, param in self.model.state_dict().items()

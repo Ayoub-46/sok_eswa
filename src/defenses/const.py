@@ -17,6 +17,8 @@ NUM_CLASSES = {
     "SENTIMENT140": 2,
     "REDDIT": 50000,
     "GTSRB": 43,
+    "REDDIT": 50000,
+    "SHAKESPEARE": 80,
 }
 
 IMG_SIZE = {

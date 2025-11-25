@@ -7,7 +7,6 @@ class DefenseMetricsLogger:
     """Handles logging defense metrics (TPR/FPR, etc.) to a CSV file."""
     def __init__(self, output_dir: str, experiment_name: str, defense_name: str):
         os.makedirs(output_dir, exist_ok=True)
-        # Create a unique filename based on the experiment and defense name
         filename = f"{experiment_name}_TPR_FPR.csv"
         self.file_path = os.path.join(output_dir, filename)
         
@@ -23,10 +22,9 @@ class DefenseMetricsLogger:
 
     def log_metrics(self, data: Dict):
         """Writes a row of metric data."""
-        # Map dictionary keys to CSV columns based on headers
         row = [data.get(h, 'NaN') for h in self.headers]
         self.writer.writerow(row)
-        self.file.flush() # Ensure data is written immediately
+        self.file.flush() 
 
     def close(self):
         """Closes the underlying file handle."""
@@ -38,7 +36,6 @@ class DefenseMetricsMixin:
     Mixin to add cumulative TPR/FPR tracking and logging capability to defense servers.
     """
     def __init__(self, *args, **kwargs):
-        # Call the next class's __init__ in the MRO (e.g., FedAvgAggregator)
         super().__init__(*args, **kwargs) 
         
         # Cumulative Counters
@@ -49,10 +46,8 @@ class DefenseMetricsMixin:
         
         self.malicious_ids_known: Set[int] = set() 
         
-        # --- Logger Setup ---
         output_dir = kwargs.get('output_dir', 'results')
         experiment_name = kwargs.get('experiment_name', 'default_experiment')
-        # Infer defense name from the class name (e.g., MKrumServer -> mkrum)
         defense_name = self.__class__.__name__.lower().replace('server', '') 
 
         try:
@@ -82,19 +77,16 @@ class DefenseMetricsMixin:
         accepted_client_ids = client_ids_received - rejected_client_ids
         benign_ids = client_ids_received - malicious_ids
         
-        # Classification for the current round
         tp_current = len(malicious_ids.intersection(rejected_client_ids))      # True Positive
         fn_current = len(malicious_ids.intersection(accepted_client_ids))       # False Negative
         fp_current = len(benign_ids.intersection(rejected_client_ids))         # False Positive
         tn_current = len(benign_ids.intersection(accepted_client_ids))          # True Negative
 
-        # Update cumulative totals
         self.total_tp += tp_current
         self.total_fn += fn_current
         self.total_fp += fp_current
         self.total_tn += tn_current
 
-        # --- Round-by-Round Reporting & Logging ---
         total_mal_round = tp_current + fn_current
         total_ben_round = fp_current + tn_current
         
@@ -118,10 +110,8 @@ class DefenseMetricsMixin:
     def close(self):
          """ Overload the close method for final reporting and file cleanup. """
          self.report_final_metrics()
-         # Call base class close if it exists
          if hasattr(super(), 'close'):
              super().close()
-         # Close the defense logger file
          if self.defense_logger:
              self.defense_logger.close()
              print(f"Closed defense metrics logger: {self.defense_logger.file_path}")
@@ -134,7 +124,6 @@ class DefenseMetricsMixin:
         final_tpr = self.total_tp / total_malicious if total_malicious > 0 else 0.0
         final_fpr = self.total_fp / total_benign if total_benign > 0 else 0.0
 
-        # --- LOG FINAL CUMULATIVE METRICS TO FILE ---
         log_data_final = {
             'round': "FINAL_CUMULATIVE", 
             'TP': self.total_tp, 'FN': self.total_fn, 'FP': self.total_fp, 'TN': self.total_tn,

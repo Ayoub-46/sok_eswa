@@ -364,11 +364,12 @@ class TDFedClient(BenignClient):
             epochs (int): Number of epochs for a BENIGN client (used for decoy).
             **kwargs: Must include 'prev_global_params' (CPU state dict).
         """
-        actual_malicious_epochs = self.malicious_epochs
 
         # --- Check Activation ---
-        if not (self.attack_start_round_idx <= round_idx <= self.attack_end_round_idx):
-            return super().local_train(round_idx=round_idx, epochs=epochs, **kwargs)
+        attack_active = kwargs.get('attack_active', True)
+
+        if not attack_active or not (self.attack_start_round <= round_idx <= self.attack_end_round):
+             return super().local_train(epochs, round_idx)     
 
         current_global_model = copy.deepcopy(self.model)
         current_global_params_cpu = {k: v.cpu().clone() for k, v in self.model.state_dict().items()}
@@ -408,7 +409,7 @@ class TDFedClient(BenignClient):
         train_loss, correct, total = 0.0, 0, 0
         metrics = {'constraint_loss': 0.0, 'task_loss': 0.0}
         
-        for epoch in range(actual_malicious_epochs): 
+        for epoch in range(self.malicious_epochs): 
             epoch_task_loss = 0.0
             epoch_constraint_loss = 0.0
             num_batches_epoch = 0
@@ -449,7 +450,7 @@ class TDFedClient(BenignClient):
         if self.scheduler:
             self.scheduler.step()
 
-        total_batches_processed = num_batches_epoch * actual_malicious_epochs
+        total_batches_processed = num_batches_epoch * self.malicious_epochs
         if total_batches_processed > 0:
             avg_loss = train_loss / total_batches_processed
             avg_task_loss = metrics['task_loss'] / total_batches_processed

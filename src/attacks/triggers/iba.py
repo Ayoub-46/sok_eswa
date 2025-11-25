@@ -55,7 +55,7 @@ class IBATrigger(BaseTrigger):
         loss_fn = nn.CrossEntropyLoss()
 
         print(f"--- Training IBA Generator for {epochs} epochs ---")
-        for epoch in range(epochs):
+        for _ in range(epochs):
             for inputs, _ in dataloader:
                 inputs = inputs.to(device)
                 optimizer.zero_grad()

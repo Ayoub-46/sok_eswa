@@ -58,9 +58,10 @@ class A3FLClient(BenignClient):
 
     def local_train(self, round_idx: int, epochs: int = 1, **kwargs) -> Dict[str, Any]:
         """Performs the two-stage A3FL attack."""
+        attack_active = kwargs.get('attack_active', True)
 
-        if not (self.attack_start_round <= round_idx <= self.attack_end_round):
-            return super().local_train(epochs, round_idx)
+        if not attack_active or not (self.attack_start_round <= round_idx <= self.attack_end_round):
+             return super().local_train(epochs, round_idx)            
         
         # 1. Optimize the trigger for the current global model
         print(f"\n--- A3FL Client [{self.id}] optimizing trigger for round {round_idx} ---")

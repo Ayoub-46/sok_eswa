@@ -2,7 +2,8 @@ import torch
 import numpy as np
 from typing import Dict, List, Optional
 import copy
-import os # Added import
+import os
+import random 
 
 from .loggings import MetricsLogger
 from .utils import get_data_and_model, get_client_instance, get_server_instance, select_clients 
@@ -82,28 +83,25 @@ class FederatedExperiment:
 
         # 3. Get client instances (Benign, attacks, etc.) from the factory
         fl_params = self.config['fl_params']
-        # --- Make data loading parameters explicit ---
         train_loaders = self.adapter.get_client_loaders(
             num_clients=fl_params['num_clients'],
-            batch_size=self.config['training_params'].get('batch_size', 64), # Get batch_size from training_params
-            strategy=self.config['data_params'].get('strategy', 'iid'), # Get strategy from data_params
-            seed=self.seed, # Pass the experiment seed
-            alpha=self.config['data_params'].get('alpha', 0.5) # Pass alpha if strategy is dirichlet
+            batch_size=self.config['training_params'].get('batch_size', 64), 
+            strategy=self.config['data_params'].get('strategy', 'iid'), 
+            seed=self.seed, 
+            alpha=self.config['data_params'].get('alpha', 0.5) 
         )
         
         self.clients: List[BaseClient] = []
         for i in range(fl_params['num_clients']):
-             # Handle cases where a client might not get data (e.g., extreme non-IID)
              if i not in train_loaders:
                   print(f"Warning: No data loader created for client {i}. Skipping client creation.")
                   continue
                   
-             # The factory decides which client class to instantiate based on the config
              client = get_client_instance(
                  self.config,
                  client_id=i,
-                 train_loader=train_loaders[i], # Pass the specific loader
-                 model=copy.deepcopy(initial_model), # Give each client its own deep copy
+                 train_loader=train_loaders[i], 
+                 model=copy.deepcopy(initial_model), 
                  device=self.device
              )
              self.clients.append(client)
@@ -113,7 +111,6 @@ class FederatedExperiment:
         self.attack_enabled = attack_cfg.get('enabled', False)
 
         if self.attack_enabled:
-            # Use float('inf') as default end if not specified, matching the helper
             self.attack_start_round = attack_cfg.get('attack_start_round', 1) 
             self.attack_end_round = attack_cfg.get('attack_end_round', float('inf')) 
             self.malicious_ids = set(attack_cfg.get('malicious_client_ids', []))
@@ -133,22 +130,39 @@ class FederatedExperiment:
         self.prev_global_params_cpu = {k: v.cpu().clone() for k, v in self.server.get_params().items()}
         self.prev_global_grad_cpu = None
 
+        attack_cfg = self.config.get('attack_params', {})
+        attack_mode = attack_cfg.get('mode', 'continuous').lower() 
+        attack_prob = attack_cfg.get('sporadic_frequency', 0.5)
+
         for round_idx in range(fl_cfg['num_rounds']):
             current_round_num = round_idx + 1 
             print(f"\n--- Round {current_round_num}/{fl_cfg['num_rounds']} ---")
 
-            # --- TPR/FPR Metric Setup: Set Ground Truth on Server (New) ---
             malicious_ids_this_round = []
+
+            is_attack_round = False
             
-            # Check if the attack is enabled and if the current round falls within the attack window
+            if self.attack_enabled:
+                if attack_mode == 'single_shot':
+                    # Only attack on the specific start round
+                    if current_round_num == self.attack_start_round:
+                        is_attack_round = True
+                elif attack_mode == 'sporadic':
+                    # Check window first, then random chance
+                    if (self.attack_start_round <= current_round_num <= self.attack_end_round):
+                        if random.random() < attack_prob:
+                            is_attack_round = True
+                else: 
+                    # Default: Continuous
+                    if (self.attack_start_round <= current_round_num <= self.attack_end_round):
+                        is_attack_round = True
+            
             if self.attack_enabled and (self.attack_start_round <= current_round_num <= self.attack_end_round):
                 # The set of malicious IDs is passed as the ground truth
                 malicious_ids_this_round = list(self.malicious_ids)
             
-            # Pass the ground truth to the defense server if it has the set_malicious_ids method (from Mixin)
             if hasattr(self.server, 'set_malicious_ids'):
                 self.server.set_malicious_ids(malicious_ids_this_round)
-            # -------------------------------------------------------------
             
             selected_clients = select_clients( 
                 client_list=self.clients,
@@ -159,18 +173,17 @@ class FederatedExperiment:
             current_global_params = self.server.get_params() 
             
             for client in selected_clients:
-                # Give client the latest global model state
                 client.set_params(current_global_params) 
                 
                 update = client.local_train(
                     round_idx=round_idx,
                     epochs=train_cfg.get('local_epochs', 1),
                     prev_global_grad= self.prev_global_grad_cpu,
-                    prev_global_params=self.prev_global_params_cpu 
+                    prev_global_params=self.prev_global_params_cpu,
+                    attack_active=is_attack_round
                 )
 
                 if update and 'weights' in update and 'num_samples' in update:
-                    # Server expects weights on its device
                     weights_on_device = {k: v.to(self.device) for k,v in update['weights'].items()}
                     self.server.receive_update(
                         client_id=client.get_id(), 
@@ -181,46 +194,39 @@ class FederatedExperiment:
                     print(f"Warning: Client {client.get_id()} did not return a valid update.")
 
             
-            # --- Server Aggregation ---
+            # Server Aggregation 
             params_before_agg_cpu = {k: v.cpu().clone() for k, v in self.server.get_params().items()}
 
-            self.server.aggregate() # Server updates its internal model
+            self.server.aggregate() 
 
-            # Store params *after* aggregation for the next round's TDFed
             params_after_agg_cpu = {k: v.cpu().clone() for k, v in self.server.get_params().items()}
             self.prev_global_params_cpu = params_before_agg_cpu # Update for TDFed
 
-            # --- Calculate and store GRADIENT for the next round's Neurotoxin ---
             self.prev_global_grad_cpu = {
                 k: params_after_agg_cpu[k] - params_before_agg_cpu.get(k, torch.tensor(0.0)) # Use .get for safety
                 for k in params_after_agg_cpu
             }
             
-            # --- Evaluation ---
+            # Evaluation 
             main_metrics = self.server.evaluate() # Evaluate the newly aggregated model
             main_acc = main_metrics['metrics'].get('main_accuracy', main_metrics['metrics'].get('accuracy', -1.0)) # Handle potential key variations
             main_loss = main_metrics['metrics'].get('loss', -1.0)
             print(f"Global Model Accuracy: {main_acc:.4f}")
             
-            # --- ASR Evaluation & Logging (Using helper function) ---
             self._evaluate_and_log_round(round_idx, main_acc, main_loss)
             
 
 
         self.logger.close()    
         
-        # --- NEW: Call server.close() to trigger final metric reporting ---
         if hasattr(self.server, 'close'):
              self.server.close()
-        # ----------------------------------------------------------------------
 
         print("\n--- Experiment Finished ---")
-        # Ensure output directory exists for saving model
         output_dir = self.config.get("output_dir", "results")
         os.makedirs(output_dir, exist_ok=True)
         self.server.save_model(f"{output_dir}/{self.config['experiment_name']}_final_model.pth")
 
-    # --- Keep Helper Function for ASR/Logging ---
     def _evaluate_and_log_round(self, round_idx, main_acc, main_loss):
         """Helper function for ASR evaluation and logging."""
         
@@ -231,15 +237,12 @@ class FederatedExperiment:
         current_round_num = round_idx + 1 # Use 1-based index consistent with checks
         
         if attack_enabled:
-            # Note: Using the attributes set in _setup now, which match the original config structure
-            attack_start_round = self.attack_start_round # or attack_cfg.get('attack_start_round', 1) 
-            end = self.attack_end_round # or attack_cfg.get('attack_end_round', float('inf'))
+            attack_start_round = self.attack_start_round 
+            end = self.attack_end_round 
             
-            # Check if current round is within the attack window (inclusive end)
             if attack_start_round <= current_round_num <= end:
                 is_attack_active = True            
 
-            # Only start ASR check once attack could have started
             if current_round_num >= attack_start_round:
                 malicious_client_ids = attack_cfg.get('malicious_client_ids', [])
                 if not malicious_client_ids:
@@ -249,21 +252,17 @@ class FederatedExperiment:
                     
                     trigger_obj = None
                     if mal_client:
-                         # Try accessing trigger directly or via attack_config
                          trigger_obj = getattr(mal_client, 'trigger', None) or mal_client.attack_config.get('trigger', None)
 
                     if trigger_obj:
-                        # Check if trigger is static (might not have 'is_static')
                         trigger_is_static = getattr(trigger_obj, 'is_static', True) 
                         
-                        # Determine if loader needs update (dynamic trigger in active round)
                         update_loader = (self.cached_backdoor_loader is None) or (not trigger_is_static and is_attack_active)
                         
                         if update_loader:
                             print(f"--- {'Creating' if self.cached_backdoor_loader is None else 'Updating'} backdoor test loader (Trigger type: {'Static' if trigger_is_static else 'Dynamic'}) ---")
-                            # Ensure generator is on the right device if it exists (for IBA)
                             if hasattr(trigger_obj, 'generator') and hasattr(trigger_obj.generator, 'to'):
-                                trigger_obj.generator.to(self.device) # Ensure generator is on eval device
+                                trigger_obj.generator.to(self.device) 
 
                             self.cached_backdoor_loader = self.adapter.get_backdoor_test_loader(
                                 trigger_fn=trigger_obj.apply,
@@ -278,13 +277,11 @@ class FederatedExperiment:
                             
                     else:
                         print(f"Warning: Could not find trigger object on malicious client {malicious_client_ids[0]}. Cannot evaluate ASR.")
-        # --- Logging ---           
         log_data = {
             'round': current_round_num, 
             'main_accuracy': main_acc,
             'main_loss': main_loss,
             'attack_success_rate': asr, 
-            'is_attack_active': int(is_attack_active),
-            
+            'is_attack_active': int(is_attack_active),            
         }
         self.logger.log_round(log_data)

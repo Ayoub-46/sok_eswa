@@ -6,7 +6,6 @@ from torch.utils.data import DataLoader
 
 class CIFAR100Dataset(DatasetAdapter):
     def __init__(self, root: str = "data", download: bool = True):
-        # Use standard CIFAR-10 transforms
         train_transform = transforms.Compose([
                 transforms.RandomCrop(32, padding=4),
                 transforms.RandomHorizontalFlip(),
