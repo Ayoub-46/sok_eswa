@@ -1,0 +1,57 @@
+experiment_name: 'leadfl_gtsrb_a3fl_sporadic_0,1'
+seed: 42
+device: "cuda"
+output_dir: "results/cv/"
+
+data_params:
+  dataset_name: 'gtsrb'
+  root: 'data'
+  download: true
+  strategy: 'iid'
+  alpha: 0.3
+  load_pretrained: false
+  load_model_path: 'src/models/pretrained/gtsrb.pth'
+
+fl_params:
+  num_clients: 20
+  clients_per_round: 20 
+  num_rounds: 200
+
+training_params:
+  batch_size: 32
+  local_epochs: 1
+  optimizer: 'sgd'
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+
+attack_params:
+  enabled: true
+  mode: "sporadic"
+  sporadic_frequency: 0.5
+  name: "a3fl"
+  malicious_client_ids: [0, 1] 
+  
+  poison_fraction: 0.25 
+  target_label: 7 
+  attack_start_round: 20 
+  attack_end_round: 100
+  malicious_epochs: 10 
+  trigger:
+    name: 'a3fl'
+    kwargs:
+      in_channels: 3         
+      image_size: [32, 32]   
+      position: [28, 28]     
+      size: [3, 3]
+      # Hyperparameters for the trigger optimization process
+      trigger_lr: 0.01
+      lambda_balance: 0.1
+      adv_epochs: 100
+      adv_lr: 0.01
+
+
+defense_params:
+  enabled: true
+  name: "leadfl"
+  mu: 0.5

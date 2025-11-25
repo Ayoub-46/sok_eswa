@@ -12,6 +12,8 @@ from ..datasets.cifar10 import CIFAR10Dataset
 from ..datasets.mnist import MNISTDataset
 from ..datasets.femnist import FEMNISTDataset
 from ..datasets.adapter import DatasetAdapter
+from ..datasets.shakespear import ShakespeareDataset
+from ..datasets.reddit import RedditDataset
 
 # Models
 from ..models.gtsrb import GTSRB_CNN
@@ -19,6 +21,7 @@ from ..models.cifar import CifarNetGN
 from ..models.mnist import MNISTNet 
 from ..models.mnist import EMNIST_CNN 
 from ..models.unet import UNet, FEMNISTAutoencoder
+from ..models.nlp import LSTMModel
 
 
 # Core FL Components
@@ -37,13 +40,13 @@ from ..attacks.triggers.iba import IBATrigger
 from ..attacks.iba_client import IBAClient
 from ..attacks.darkfed import DarkFedClient
 
-
 # Defense Components
 from ..defenses.krum import MKrumServer
 from ..defenses.flame import FlameServer
 from ..defenses.clip_dp import NormClippingServer
 from ..defenses.deepsight import DeepSightServer
 from ..defenses.leadfl_client import LeadFLClient
+from ..defenses.const import NUM_CLASSES
 
 def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Module]: 
     """Returns the appropriate dataset adapter and model instance."""
@@ -51,7 +54,13 @@ def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Modu
     root = data_config.get('root', 'data')
     download = data_config.get('download', True) 
 
-    if dataset_name.lower() == 'gtsrb':
+    if dataset_name == 'shakespeare':
+        adapter = ShakespeareDataset(data_config.get('root', 'data'))
+        model = LSTMModel(vocab_size=NUM_CLASSES['SHAKESPEARE'], embedding_dim=8, hidden_dim=256)
+    elif dataset_name == 'reddit':
+        adapter = RedditDataset(data_config.get('root', 'data'))
+        model = LSTMModel(vocab_size=NUM_CLASSES['REDDIT'], embedding_dim=200, hidden_dim=256)
+    elif dataset_name.lower() == 'gtsrb':
         adapter = GTSRBDataset(root, download)
         model = GTSRB_CNN(num_classes=43)
     elif dataset_name.lower() == 'cifar10':

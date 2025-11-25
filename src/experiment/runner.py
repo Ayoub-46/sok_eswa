@@ -41,8 +41,8 @@ class FederatedExperiment:
 
         headers = [
             'round', 'main_accuracy', 'main_loss', 'attack_success_rate',
-            'is_attack_active', 'bottleneck_distance', 'bottleneck_threshold'
-        ]
+            'is_attack_active' ]
+        
         self.logger = MetricsLogger(
             output_dir=self.config.get("output_dir", "results"), 
             experiment_name=self.config['experiment_name'],
@@ -213,7 +213,7 @@ class FederatedExperiment:
             main_loss = main_metrics['metrics'].get('loss', -1.0)
             print(f"Global Model Accuracy: {main_acc:.4f}")
             
-            self._evaluate_and_log_round(round_idx, main_acc, main_loss)
+            self._evaluate_and_log_round(round_idx, main_acc, main_loss, is_attack_round)
             
 
 
@@ -227,7 +227,7 @@ class FederatedExperiment:
         os.makedirs(output_dir, exist_ok=True)
         self.server.save_model(f"{output_dir}/{self.config['experiment_name']}_final_model.pth")
 
-    def _evaluate_and_log_round(self, round_idx, main_acc, main_loss):
+    def _evaluate_and_log_round(self, round_idx, main_acc, main_loss, is_attack_round):
         """Helper function for ASR evaluation and logging."""
         
         attack_cfg = self.config.get('attack_params', {})
@@ -282,6 +282,6 @@ class FederatedExperiment:
             'main_accuracy': main_acc,
             'main_loss': main_loss,
             'attack_success_rate': asr, 
-            'is_attack_active': int(is_attack_active),            
+            'is_attack_active': int(is_attack_round),            
         }
         self.logger.log_round(log_data)
