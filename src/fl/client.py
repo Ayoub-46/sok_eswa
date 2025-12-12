@@ -40,6 +40,7 @@ class BenignClient(BaseClient):
         model: torch.nn.Module,
         lr: float,
         weight_decay: float,
+        optimizer: str = 'sgd',
         epochs: int = 1,
         device: Optional[torch.device] = None,
         ignore_index: int = -100 
@@ -57,7 +58,8 @@ class BenignClient(BaseClient):
         
         self.optimizer = None
         self.scheduler = None
-        self._create_optimizer()
+        self.optimizer_name = optimizer
+        # self._create_optimizer(self.optimizer_name)
         
         self.ignore_index = ignore_index
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=self.ignore_index)
@@ -66,9 +68,13 @@ class BenignClient(BaseClient):
     def model(self) -> torch.nn.Module:
         return self._model
 
-    def _create_optimizer(self) -> None:
-        self.optimizer = torch.optim.SGD(self._model.parameters(), lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.97)
+    def _create_optimizer(self, optimizer: str) -> None:
+        if optimizer.lower() == "adam":
+            self.optimizer = torch.optim.Adam(self._model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+            self.scheduler = None
+        else:  # Default to SGD
+            self.optimizer = torch.optim.SGD(self._model.parameters(), lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.97)
 
     def get_id(self) -> int:
         return self.id
@@ -85,7 +91,7 @@ class BenignClient(BaseClient):
 
     def local_train(self, epochs: int, round_idx: int, **kwargs) -> Dict[str, Any]:
         self.model.to(self.device)
-        self._create_optimizer()
+        self._create_optimizer(self.optimizer_name)
 
         self.model.train()
         train_loss, correct, total = 0.0, 0, 0

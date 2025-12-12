@@ -133,25 +133,20 @@ class Sentiment140Dataset(DatasetAdapter):
         self._is_loaded = True
 
     def _clean_text(self, text: str) -> str:
-        """
-        Research-grade cleaning for Sentiment Analysis.
-        1. Lowercase.
-        2. Tokenize Mentions/URLs (structure preservation).
-        3. Keep emoticons/punctuation relevant to sentiment (! ? :) etc).
-        """
         text = str(text).lower()
         
-        # Replace mentions with <USER>
+        # 1. Replace mentions/URLs first (Preserve these specific tokens)
         text = re.sub(r'@[a-z0-9_]+', f' {self.user_token} ', text) 
-        
-        # Replace URLs with <URL>
         text = re.sub(r'https?://[^\s]+', f' {self.url_token} ', text)
         
-        # Remove characters that are NOT: alphanumeric, spacing, or sentiment-heavy punctuation
-        # Allowed: a-z, 0-9, space, !, ?, :, ), (, - (for smileys like :-) )
+        # 2. Add spaces around crucial punctuation (FIXED)
+        # This ensures "happy!" becomes "happy !" so both are found in GloVe
+        text = re.sub(r'([!?:\)\(\-])', r' \1 ', text)
+        
+        # 3. Remove illegal characters (allow the ones we spaced out)
         text = re.sub(r'[^a-z0-9 !?:\)\(\-]', '', text)
         
-        # Collapse multiple spaces
+        # 4. Collapse spaces
         text = re.sub(r'\s+', ' ', text).strip()
         
         return text
@@ -182,6 +177,8 @@ class Sentiment140Dataset(DatasetAdapter):
         
         for i, (word, c) in enumerate(common):
             self.word_to_int[word] = i + 2 
+
+        print(f"Vocabulary built. Size: {len(self.word_to_int)}")
 
     def _load_glove_embeddings(self, dim=100):
         glove_path = f"data/glove/glove.6B.{dim}d.txt"

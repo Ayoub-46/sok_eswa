@@ -189,7 +189,7 @@ def get_client_instance(
 
     dataset_name = config.get('data_params', {}).get('dataset_name', '').lower()
 
-    if 'shakespeare' in dataset_name or 'reddit' in dataset_name or 'sentiment140' in dataset_name:
+    if 'shakespeare' in dataset_name or 'reddit' in dataset_name:
         ignore_index = 0
     else:
         ignore_index = -100
@@ -200,6 +200,7 @@ def get_client_instance(
         'trainloader': train_loader, 
         'testloader': None,
         'model': model, 
+        'optimizer': training_params.get('optimizer', 'sgd'),
         'lr': training_params.get('lr', 0.01),
         'weight_decay': training_params.get('weight_decay', 5e-4), 
         'epochs': training_params.get('local_epochs', 1), 

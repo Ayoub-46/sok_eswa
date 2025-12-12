@@ -1,4 +1,4 @@
-experiment_name: 'sentiment140_fedadam_opt'
+experiment_name: 'sentiment140'
 seed: 42
 device: "cuda"
 output_dir: "results/nlp/"
@@ -9,36 +9,15 @@ data_params:
   download: true
 
 fl_params:
-  # 500-1000 is a good pool size for prototyping. 
-  # Sentiment140 has ~660k users naturally; this selects a subset.
   num_clients: 1000 
-  
-  # Increasing clients per round stabilizes the gradient for the server
   clients_per_round: 20 
-  
-  # NLP tasks need more rounds. 100 is often too few for LSTM.
-  num_rounds: 200 
-
-  # OPTIMIZATION: FedAdam is State-of-the-Art for FL NLP
-  # It handles the "sparse" updates of text data better than FedAvg.
-  aggregator: 'fedavg'
-  
+  num_rounds: 200   
 
 training_params:
-  # Batch size 20-32 is preferred over 10 for cleaner gradients
   batch_size: 20
-  
-  # Strict FL usually uses 1 local epoch to prevent client drift
-  local_epochs: 1
-  
-  optimizer: 'sgd'
-  
-  # CRITICAL: LSTM + SGD needs a high LR (0.1 - 1.0) in FL settings.
-  # 0.01 is often too slow for clients performing only 1 epoch.
-  lr: 0.1
-  
-  # Keep momentum 0 at the client level to reduce communication overhead 
-  # (momentum buffers double the upload size if transmitted).
+  local_epochs: 1  
+  optimizer: 'adam'
+  lr: 0.001
   momentum: 0.0 
   weight_decay: 0.0001
 
