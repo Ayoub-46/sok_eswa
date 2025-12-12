@@ -12,8 +12,8 @@ from ..datasets.cifar10 import CIFAR10Dataset
 from ..datasets.mnist import MNISTDataset
 from ..datasets.femnist import FEMNISTDataset
 from ..datasets.adapter import DatasetAdapter
-from ..datasets.shakespear import ShakespeareDataset
-from ..datasets.reddit import RedditDataset
+from ..datasets.flwr_shakespeare import FlwrShakespeareDataset
+from ..datasets.sentiment140 import Sentiment140Dataset
 
 # Models
 from ..models.gtsrb import GTSRB_CNN
@@ -22,12 +22,14 @@ from ..models.mnist import MNISTNet
 from ..models.mnist import EMNIST_CNN 
 from ..models.unet import UNet, FEMNISTAutoencoder
 from ..models.nlp import LSTMModel
+from ..models.nlp import TextClassifier
 
 
 # Core FL Components
 from ..fl.client import BaseClient, BenignClient
 from ..fl.fedprox_client import FedProxClient
 from ..fl.server import FedAvgAggregator
+from ..fl.server import FedOptAggregator
 
 # Attack Components
 from ..attacks.neurotoxin_client import NeurotoxinClient
@@ -39,6 +41,7 @@ from ..attacks.triggers.patch_trigger import PatchTrigger
 from ..attacks.triggers.iba import IBATrigger
 from ..attacks.iba_client import IBAClient
 from ..attacks.darkfed import DarkFedClient
+from ..attacks.mr_client import ModelReplacementClient
 
 # Defense Components
 from ..defenses.krum import MKrumServer
@@ -47,6 +50,7 @@ from ..defenses.clip_dp import NormClippingServer
 from ..defenses.deepsight import DeepSightServer
 from ..defenses.leadfl_client import LeadFLClient
 from ..defenses.const import NUM_CLASSES
+from ..defenses.trimmed_mean import TrimmedMeanServer, MedianServer
 
 def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Module]: 
     """Returns the appropriate dataset adapter and model instance."""
@@ -54,12 +58,24 @@ def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Modu
     root = data_config.get('root', 'data')
     download = data_config.get('download', True) 
 
-    if dataset_name == 'shakespeare':
-        adapter = ShakespeareDataset(data_config.get('root', 'data'))
-        model = LSTMModel(vocab_size=NUM_CLASSES['SHAKESPEARE'], embedding_dim=8, hidden_dim=256)
-    elif dataset_name == 'reddit':
-        adapter = RedditDataset(data_config.get('root', 'data'))
-        model = LSTMModel(vocab_size=NUM_CLASSES['REDDIT'], embedding_dim=200, hidden_dim=256)
+    if dataset_name == 'sentiment140':
+        adapter = Sentiment140Dataset(root=data_config.get('root', 'data'))
+        adapter.setup()
+        model = TextClassifier(
+            vocab_size=len(adapter.word_to_int), 
+            embedding_dim=100, 
+            hidden_dim=128, 
+            output_dim=2,
+            pretrained_embeddings=adapter.embedding_weights
+        )          
+    elif dataset_name == 'flwr_shakespeare':
+        adapter = FlwrShakespeareDataset(root=data_config.get('root', 'data'))
+        model = LSTMModel(
+            vocab_size=81, 
+            embedding_dim=8, 
+            hidden_dim=256, 
+            num_layers=2
+            )
     elif dataset_name.lower() == 'gtsrb':
         adapter = GTSRBDataset(root, download)
         model = GTSRB_CNN(num_classes=43)
@@ -97,6 +113,7 @@ def get_server_instance(config: Dict, model, test_loader, device):
     Factory function to create the server instance.
     Includes defense mechanisms.
     """
+    fl_params = config.get('fl_params', {})
     defense_cfg = config.get('defense_params', {})
     defense_enabled = defense_cfg.get('enabled', False) 
     defense_name = defense_cfg.get('name', 'none').lower() if defense_enabled else 'none'
@@ -107,24 +124,44 @@ def get_server_instance(config: Dict, model, test_loader, device):
         'experiment_name': config.get('experiment_name', 'default_exp')
     }
 
-    if defense_name == 'krum':
-        print("Instantiating MKrum server.")
-        return MKrumServer(model, test_loader, device, defense_cfg, **logging_kwargs)
-    elif defense_name == 'flame':
-        print("Instantiating Flame server.")
-        return FlameServer(model, test_loader, device, defense_cfg, **logging_kwargs)
-    elif defense_name == 'norm_clipping_dp': 
-        print("Instantiating Norm Clipping with DP server.")
-        return NormClippingServer(model, test_loader, device, defense_cfg, **logging_kwargs)
-    elif defense_name == 'deepsight':
-        print("Instantiating DeepSight server.")
-        defense_cfg['dataset'] = dataset_name
-        return DeepSightServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+    if defense_enabled:
+        if defense_name == 'krum':
+            print("Instantiating MKrum server.")
+            return MKrumServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+        elif defense_name == 'flame':
+            print("Instantiating Flame server.")
+            return FlameServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+        elif defense_name == 'norm_clipping_dp': 
+            print("Instantiating Norm Clipping with DP server.")
+            return NormClippingServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+        elif defense_name == 'deepsight':
+            print("Instantiating DeepSight server.")
+            defense_cfg['dataset'] = dataset_name
+            return DeepSightServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+        elif defense_name == 'trimmed_mean':
+            print("Instantiating Trimmed Mean server.")
+            return TrimmedMeanServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+        elif defense_name == 'median':
+            print("Instantiating Median server.")
+            return MedianServer(model, test_loader, device, defense_cfg, **logging_kwargs)
+        else:
+            print(f"Warning: Unknown defense '{defense_name}'. Defaulting to FedAvg server.")
     else: 
-        if defense_enabled and defense_name != 'none':
-             print(f"Warning: Unknown defense '{defense_name}'. Falling back to standard FedAvg.")
-        print("Instantiating standard FedAvg server.")
-        return FedAvgAggregator(model=model, testloader=test_loader, device=device)
+        aggregator = fl_params.get('aggregator', 'fedavg').lower()
+        if aggregator in ['fedadam', 'fedyogi', 'fedadagrad']:
+            print(f"Instantiating {aggregator.capitalize()} server.")
+            return FedOptAggregator(
+                model, test_loader, device,
+                opt_method=aggregator.replace('fed', ''), # extracts 'adam' from 'fedadam'
+                server_lr=fl_params.get('server_lr', 1.0),
+                betas=tuple(fl_params.get('server_betas', [0.9, 0.99])),
+                tau=fl_params.get('server_tau', 1e-3)
+            )
+        else:
+            print(f"Warning: Unknown aggregator '{aggregator}'. Defaulting to FedAvg server.")
+        
+    print("Instantiating FedAvg server.")
+    return FedAvgAggregator(model=model, testloader=test_loader, device=device)
 
 
 def get_client_instance(
@@ -142,6 +179,14 @@ def get_client_instance(
     malicious_ids = set(attack_cfg.get('malicious_client_ids', []))
     training_params = config['training_params']
 
+    dataset_name = config.get('data_params', {}).get('dataset_name', '').lower()
+
+    if 'shakespeare' in dataset_name or 'reddit' in dataset_name:
+        ignore_index = 0
+    else:
+        # For Images, we typically don't mask, or use -100 (PyTorch default ignore)
+        ignore_index = -100
+
     # 1. Define all base arguments for any client 
     base_client_args = {
         'id': client_id,
@@ -151,7 +196,8 @@ def get_client_instance(
         'lr': training_params.get('lr', 0.01),
         'weight_decay': training_params.get('weight_decay', 5e-4), 
         'epochs': training_params.get('local_epochs', 1), 
-        'device': device
+        'device': device,
+        'ignore_index': ignore_index
     }
 
     if attack_cfg.get('enabled') and client_id in malicious_ids:
@@ -219,19 +265,22 @@ def get_client_instance(
             return TDFedClient(attack_config=malicious_config, **base_client_args)
         elif attack_name == 'darkfed': 
             return DarkFedClient(attack_config=malicious_config, **base_client_args)
+        elif attack_name == 'model_replacement' or attack_name == 'mr':
+            return ModelReplacementClient(attack_config=malicious_config, **base_client_args)
         else:
             # Fallback or error for unknown attack
              print(f"Warning: Unknown attack name '{attack_name}' for malicious client {client_id}. Creating BenignClient instead.")
              return BenignClient(**base_client_args) 
-    else:
-        defense_cfg = config.get('defense_params', {})
-        defense_enabled = defense_cfg.get('enabled', False)
-        defense_name = defense_cfg.get('name', 'none').lower()
     
-        # If LeadFL is enabled, benign clients use LeadFLClient
-        if defense_enabled and defense_name == 'leadfl':
+    defense_cfg = config.get('defense_params', {})
+    defense_name = defense_cfg.get('name', 'none').lower()
+    client_defense = defense_cfg.get('client_defense', 'none').lower() # NEW KEY
+    
+    # Enable LeadFL if it is the main name OR explicitly set as client_defense
+    if defense_cfg.get('enabled', False):
+        if defense_name == 'leadfl' or client_defense == 'leadfl':
             return LeadFLClient(
-                defense_config=defense_cfg, 
+                defense_config=defense_cfg,
                 **base_client_args
             )
         
@@ -240,4 +289,3 @@ def get_client_instance(
             print(f"Instantiating FedProx client {client_id} with mu={fedprox_mu}.")
             return FedProxClient(mu=fedprox_mu, **base_client_args)  
     return BenignClient(**base_client_args)
-

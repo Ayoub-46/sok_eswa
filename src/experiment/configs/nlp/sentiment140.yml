@@ -1,0 +1,35 @@
+experiment_name: 'sentiment140_sota_baseline'
+seed: 42
+device: "cuda"
+output_dir: "results/nlp/"
+
+data_params:
+  dataset_name: 'sentiment140'
+  root: 'data/sentiment140'
+  download: true
+
+fl_params:
+  # Bagdasaryan uses the full dataset, but 100-500 is standard for prototyping
+  num_clients: 500
+  clients_per_round: 10
+  num_rounds: 100
+
+  # Standard FedAvg Baseline
+  aggregator: 'fedavg'
+
+training_params:
+  # RESEARCH STANDARD: Small batch size for textual data
+  batch_size: 10
+  # RESEARCH STANDARD: 1 Local Epoch is the strict FL definition
+  local_epochs: 1
+  optimizer: 'sgd'
+  # RESEARCH STANDARD: 0.1 is the reference LR for Sentiment140 (Reddi et al. 2021)
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+
+attack_params:
+  enabled: false
+
+defense_params:
+  enabled: false

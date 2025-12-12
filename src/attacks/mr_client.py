@@ -22,7 +22,7 @@ class ModelReplacementClient(BenignClient):
         # Attack parameters
         self.target_label = attack_config.get('target_label', 0)
         self.poison_fraction = attack_config.get('poison_fraction', 0.5)
-        self.malicious_epochs = attack_config.get('malicious_epochs', 5)
+        self.malicious_epochs = attack_config.get('malicious_epochs', 10)
         self.attack_start_round = attack_config.get('attack_start_round', 1)
         self.attack_end_round = attack_config.get('attack_end_round', float('inf'))
         

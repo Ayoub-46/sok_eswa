@@ -1,0 +1,49 @@
+experiment_name: 'neurotoxin_trimmed_mean_cifar_iid'
+seed: 42
+device: "cuda"
+output_dir: "results/trimmed_mean/"
+
+data_params:
+  dataset_name: 'cifar10'
+  root: 'data'
+  download: true
+  strategy: 'iid'
+  load_pretrained: true
+  load_model_path: 'src/models/pretrained/cifar10.pth'
+
+
+fl_params:
+  num_clients: 50
+  clients_per_round: 20 
+  num_rounds: 100
+
+training_params:
+  batch_size: 32
+  local_epochs: 1
+  optimizer: 'sgd'
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.00001
+
+attack_params:
+  enabled: true
+  name: 'neurotoxin' 
+  malicious_client_ids: [0, 1, 2, 3, 4] 
+  target_label: 8
+  attack_start_round: 0 
+  attack_end_round: 100
+  poison_fraction: 0.25 
+  mask_k_percent: 0.05
+  malicious_epochs: 1
+
+  trigger:
+    name: 'patch'
+    position: [28, 28] 
+    size: [3, 3]
+    color: [1.0, 1.0, 1.0] 
+
+defense_params:
+  enabled: true 
+  name: 'trimmed_mean' 
+  
+  beta: 0.2 

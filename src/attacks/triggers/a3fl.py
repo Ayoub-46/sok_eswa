@@ -131,4 +131,3 @@ class A3FLTrigger(BaseTrigger):
         mask = self.mask.to(image.device)
         
         return torch.clamp(image * (1 - mask) + pattern * mask, 0, 1)
-

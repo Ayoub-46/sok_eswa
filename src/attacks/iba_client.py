@@ -25,6 +25,7 @@ class IBAClient(BenignClient):
         self.attack_end_round = attack_config.get('attack_end_round', float('inf'))
         self.poison_fraction = attack_config.get('poison_fraction', 0.5)
         self.seed = attack_config.get('seed', 42)
+        self.malicious_epochs = attack_config.get('malicious_epochs', 1)
 
     def local_train(self, round_idx: int, epochs: int=1, **kwargs) -> Dict[str, Any]:
         """Performs the two-stage IBA attack if within the attack window."""
@@ -57,7 +58,7 @@ class IBAClient(BenignClient):
             original_loader = self.trainloader
             try:
                 self.trainloader = poisoned_loader
-                result = super().local_train(epochs, round_idx)
+                result = super().local_train(self.malicious_epochs, round_idx)
             finally:
                 self.trainloader = original_loader
             

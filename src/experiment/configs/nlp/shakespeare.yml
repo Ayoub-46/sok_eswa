@@ -1,0 +1,40 @@
+experiment_name: 'flwr_shakespeare_fedavg_full'
+seed: 42
+device: "cuda"
+output_dir: "results/nlp/"
+
+data_params:
+  dataset_name: 'flwr_shakespeare'
+  # Point this to the folder containing your 'train' and 'test' subfolders
+  root: 'data/flwr_shakespeare' 
+  strategy: 'natural'           # Preserves the Non-IID user partitions
+  load_pretrained: true
+  load_model_path: 'src/models/pretrained/flwr_shakespeare.pth'
+fl_params:
+  # The full dataset has ~1,129 users, but filtering for users with >2 lines 
+  # (standard practice) leaves ~715. Setting this high ensures we use everyone.
+  num_clients: 1129       
+  clients_per_round: 20   # Standard sampling (Reddi et al. 2021)
+  num_rounds: 50         # Convergence typically begins around round 20-40
+  aggregator: 'fedadam'   # Options: 'fedavg', 'fedadam', 'fedyogi', 'fedadagrad'
+  server_lr: 0.01       # Step size for the server optimizer (eta)
+  server_betas: [0.9, 0.99]
+  server_tau: 0.001
+
+training_params:
+  # Crucial: Shakespeare uses a very small batch size and high LR
+  batch_size: 10          
+  local_epochs: 1         
+  optimizer: 'sgd'
+  # Standard LR is 1.0 - 1.5 for character-level LSTMs. 
+  # Do not use 0.01 (it will not converge).
+  lr: 0.1                 
+  momentum: 0.0
+  weight_decay: 0.0
+
+# Start with attacks disabled to establish a baseline accuracy (~53%)
+attack_params:
+  enabled: false
+  
+defense_params:
+  enabled: false

@@ -105,6 +105,7 @@ class DefenseMetricsMixin:
         print(f"--- Round {current_round} Defense Metrics ---")
         print(f"  TP={tp_current}, FN={fn_current}, FP={fp_current}, TN={tn_current}")
         print(f"  TPR (Round): {round_tpr:.4f}, FPR (Round): {round_fpr:.4f}")
+        self.round_counter += 1
         
 
     def close(self):
