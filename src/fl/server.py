@@ -43,10 +43,6 @@ class FedAvgAggregator(BaseServer):
         }
 
     def evaluate(self, valloader=None) -> Dict[str, object]:
-        """
-        Evaluates the global model.
-        Handles Sequence tasks (Shakespeare) and Classification (Image/Sentiment).
-        """
         valloader = valloader or self.testloader
         self.model.eval()
 
@@ -55,48 +51,47 @@ class FedAvgAggregator(BaseServer):
         
         loss_sum, correct, total, iters = 0.0, 0, 0, 0
         
-        # --- FIX: Initialize to False so the debug block runs once ---
-        printed_debug = False 
-        
+        # Define Binary Loss separately just in case
+        bce_loss = nn.BCEWithLogitsLoss()
+
+        log_shape = True
         with torch.no_grad():
             for inputs, targets in valloader:
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 outputs = self.model(inputs)
                 
-                # Handle Hugging Face Many-to-One (Shakespeare/Sentiment)
-                # If target is 1D [Batch] and Output is 3D [Batch, Vocab, Seq], slice the last token
+                print(f"outputs shape: {outputs.shape}, targets shape: {targets.shape}") if log_shape else None
+                log_shape = False
+                
+                # Handle Hugging Face Output [Batch, Seq, Vocab] -> Take last token
                 if targets.ndim == 1 and outputs.ndim == 3:
                     outputs = outputs[:, :, -1]
 
-                # --- DEBUG PRINT (First Batch Only) ---
-                if not printed_debug:
-                    print("\n--- SERVER EVALUATION DEBUG ---")
-                    print(f"Output Shape: {outputs.shape}")
-                    print(f"Target Shape: {targets.shape}")
-                    if outputs.ndim == 2:
-                        _, debug_preds = torch.max(outputs.data, 1)
-                        print(f"First 10 Preds:   {debug_preds[:10].cpu().tolist()}")
-                        print(f"First 10 Targets: {targets[:10].cpu().tolist()}")
-                    printed_debug = True
-                # -------------------------------------
-
-                # Case A: NLP Sequence (Shakespeare Many-to-Many)
+                # Case A: NLP Sequence (Shakespeare)
                 if outputs.ndim == 3: 
-                    # FIX: Must Ignore Padding Index (0) for Sequence Generation
                     loss_sum += nn.functional.cross_entropy(outputs, targets, ignore_index=0).item()
-                    
                     _, preds = torch.max(outputs.data, 1)
                     mask = (targets != 0)
                     correct += (preds == targets)[mask].sum().item()
                     total += mask.sum().item()
                     
-                # Case B: Classification (Sentiment140, CIFAR, etc.)
-                else: 
-                    # Do NOT ignore index 0 (Class 0 is valid "Negative" sentiment)
-                    loss_sum += self.loss_fn(outputs, targets).item()
+                # Case B: Classification
+                else:
+                    # FIX: Detect if Binary (1 Output) or Multi-class (2+ Outputs)
+                    if outputs.size(1) == 1:
+                        # Binary Classification Logic
+                        outputs = outputs.squeeze(1) # [Batch, 1] -> [Batch]
+                        loss_sum += bce_loss(outputs, targets.float()).item()
+                        
+                        # Apply Sigmoid to get probability -> Threshold at 0.5
+                        preds = (torch.sigmoid(outputs) > 0.5).long()
+                        correct += (preds == targets).sum().item()
+                    else:
+                        # Multi-class Logic (Output_dim=2 for Pos/Neg)
+                        loss_sum += self.loss_fn(outputs, targets).item()
+                        _, preds = torch.max(outputs.data, 1)
+                        correct += (preds == targets).sum().item()
                     
-                    _, preds = torch.max(outputs.data, 1)
-                    correct += (preds == targets).sum().item()
                     total += targets.size(0)
                 
                 iters += 1
@@ -150,10 +145,8 @@ class FedOptAggregator(FedAvgAggregator):
         self.m_t = {k: torch.zeros_like(p) for k, p in self.model.named_parameters()}
         self.v_t = {k: torch.zeros_like(p) + tau**2 for k, p in self.model.named_parameters()}
         
-    # --- CLEANUP: evaluate() removed. Inherits fixed version from FedAvgAggregator ---
 
     def aggregate(self) -> Dict[str, torch.Tensor]:
-        # (This method remains the same as your previous implementation)
         assert len(self.received_updates) > 0, "No client updates received."
         
         # 1. Calculate Standard Weighted Average (Pseudogradient)

@@ -57,6 +57,16 @@ class FederatedExperiment:
         self.adapter, initial_model = get_data_and_model(self.config['data_params'])
         self.adapter.setup()
 
+        if hasattr(self.adapter, 'embedding_weights') and self.adapter.embedding_weights is not None:
+            print("--- Injecting GloVe embeddings into initial model ---")
+            # Check if model has the specific helper method we saw in your nlp.py
+            if hasattr(initial_model, 'load_pretrained_embeddings'):
+                initial_model.load_pretrained_embeddings(self.adapter.embedding_weights)
+            # Fallback standard injection
+            elif hasattr(initial_model, 'embedding'):
+                initial_model.embedding.weight.data.copy_(self.adapter.embedding_weights)
+                initial_model.embedding.weight.requires_grad = False
+
         load_pretrained = self.config['data_params'].get('load_pretrained', False)
         load_model_path = self.config['data_params'].get('load_model_path', '')
         

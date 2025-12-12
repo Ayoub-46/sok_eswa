@@ -181,12 +181,11 @@ def get_client_instance(
 
     dataset_name = config.get('data_params', {}).get('dataset_name', '').lower()
 
-    if 'shakespeare' in dataset_name or 'reddit' in dataset_name:
+    if 'shakespeare' in dataset_name or 'reddit' in dataset_name or 'sentiment140' in dataset_name:
         ignore_index = 0
     else:
-        # For Images, we typically don't mask, or use -100 (PyTorch default ignore)
         ignore_index = -100
-
+        
     # 1. Define all base arguments for any client 
     base_client_args = {
         'id': client_id,

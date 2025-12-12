@@ -52,7 +52,7 @@ class BenignClient(BaseClient):
         self.lr = lr
         self.weight_decay = weight_decay
 
-        self._model = model.to(self.device)
+        self._model = model.to("cpu")
         self.dataset_len = len(trainloader.dataset) if trainloader is not None else 0
         
         self.optimizer = None
@@ -78,13 +78,15 @@ class BenignClient(BaseClient):
 
     def set_params(self, params: Dict[str, torch.Tensor]) -> None:
         self.model.load_state_dict(params)
-        self.model.to(self.device)
-        self._create_optimizer()
+        
         
     def get_params(self) -> Dict[str, torch.Tensor]:
         return {k: v.cpu().clone() for k, v in self._model.state_dict().items()}
 
     def local_train(self, epochs: int, round_idx: int, **kwargs) -> Dict[str, Any]:
+        self.model.to(self.device)
+        self._create_optimizer()
+
         self.model.train()
         train_loss, correct, total = 0.0, 0, 0
         run_epochs = epochs if epochs is not None else self.epochs_default
@@ -125,6 +127,11 @@ class BenignClient(BaseClient):
         avg_loss = train_loss / (num_batches * run_epochs) if num_batches > 0 else 0.0
         accuracy = correct / total if total > 0 else 0.0
         
+        self.model.to("cpu")
+        self.optimizer = None
+        self.scheduler = None
+        torch.cuda.empty_cache()
+
         metrics = {'loss': avg_loss, 'accuracy': accuracy}
         
         return {
@@ -136,6 +143,7 @@ class BenignClient(BaseClient):
         }
 
     def local_evaluate(self) -> Dict[str, Any]:
+        self.model.to(self.device)
         self.model.eval()
         loss_sum, correct, total, iters = 0.0, 0, 0, 0
         valloader = self.testloader or self.trainloader
@@ -166,6 +174,8 @@ class BenignClient(BaseClient):
                 
         loss_avg = (loss_sum / iters) if iters > 0 else float('nan')
         acc = (correct / total) if total > 0 else float('nan')
+        
+        self.model.to("cpu")
         
         return {
             'client_id': self.get_id(), 

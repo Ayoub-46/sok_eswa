@@ -39,6 +39,11 @@ class SentimentLSTM(nn.Module):
     """
     Standard 2-Layer LSTM for Federated Sentiment Analysis.
     Reference: Bagdasaryan et al. "How To Backdoor Federated Learning"
+    
+    Architecture:
+    1. Embedding (Pre-trained GloVe, frozen)
+    2. LSTM (2 Layers, 256 Hidden)
+    3. Linear Head (Binary Classification)
     """
     def __init__(self, 
                  vocab_size, 
@@ -52,70 +57,69 @@ class SentimentLSTM(nn.Module):
         super(SentimentLSTM, self).__init__()
         
         # 1. Embedding Layer
-        # We specify padding_idx so the model ignores the padding token (0) during training
         self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=pad_idx)
         
         # 2. LSTM Layer
-        # batch_first=True expects input shape: [batch_size, seq_len]
         self.lstm = nn.LSTM(embedding_dim, 
                             hidden_dim, 
                             num_layers=n_layers, 
                             bidirectional=bidirectional, 
                             dropout=dropout, 
-                            batch_first=True)
+                            batch_first=True) # Expects [Batch, Seq, Feature]
         
         # 3. Fully Connected Layer
-        # If bidirectional, the hidden state size doubles
         fc_input_dim = hidden_dim * 2 if bidirectional else hidden_dim
         self.fc = nn.Linear(fc_input_dim, output_dim)
         
-        # 4. Dropout for regularization
+        # 4. Dropout
         self.dropout = nn.Dropout(dropout)
-        
-        # 5. Activation
-        # BCEWithLogitsLoss includes Sigmoid, but we include it here if you use BCELoss
-        self.sigmoid = nn.Sigmoid()
 
     def load_pretrained_embeddings(self, embeddings, freeze=True):
         """
-        Helper to load GloVe vectors.
-        Arguments:
-            embeddings (torch.Tensor): Tensor of shape (vocab_size, embedding_dim)
-            freeze (bool): If True, gradients won't update the embeddings (Standard FL practice)
+        Loads GloVe vectors and optionally freezes them.
+        
+        In FL, freezing is CRITICAL. 
+        If False: The model update size is ~20MB (50k * 100 floats).
+        If True: The model update size is ~1MB (LSTM weights only).
         """
-        self.embedding.weight.data.copy_(embeddings)
-        if freeze:
-            self.embedding.weight.requires_grad = False
+        # Handle size mismatch if vocab changed
+        if embeddings.shape != self.embedding.weight.shape:
+            print(f"Resize embedding: {self.embedding.weight.shape} -> {embeddings.shape}")
+            self.embedding = nn.Embedding.from_pretrained(embeddings, freeze=freeze, padding_idx=0)
+        else:
+            self.embedding.weight.data.copy_(embeddings)
+            if freeze:
+                self.embedding.weight.requires_grad = False
+        
+        state = "Frozen" if freeze else "Trainable"
+        print(f"Embeddings loaded and {state}.")
 
-    def forward(self, text, text_lengths=None):
-        # text shape: [batch size, sent len]
+    def forward(self, text):
+        # text shape: [batch size, seq_len]
         
         # 1. Embed
+        # [batch, seq_len, emb_dim]
         embedded = self.dropout(self.embedding(text))
-        # embedded shape: [batch size, sent len, emb dim]
         
         # 2. LSTM
-        # We handle packing if lengths are provided (optimization for variable length sequences)
-        if text_lengths is not None:
-            packed_embedded = nn.utils.rnn.pack_padded_sequence(embedded, text_lengths.cpu(), batch_first=True, enforce_sorted=False)
-            packed_output, (hidden, cell) = self.lstm(packed_embedded)
-            # Unpack isn't strictly necessary if we only care about the final hidden state
-        else:
-            output, (hidden, cell) = self.lstm(embedded)
+        # output: [batch, seq_len, hidden_dim * num_directions]
+        # hidden: [num_layers * num_directions, batch, hidden_dim]
+        output, (hidden, cell) = self.lstm(embedded)
         
-        # 3. Extract final hidden state
-        # hidden shape: [num layers * num directions, batch size, hid dim]
+        # 3. Extract final state
+        # We take the hidden state of the last layer
         if self.lstm.bidirectional:
-            # Concat the final forward and backward hidden states
-            hidden = self.dropout(torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1))
+            # Concatenate the final forward and backward states
+            hidden_final = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
         else:
-            # Take the last layer's hidden state
-            hidden = self.dropout(hidden[-1,:,:])
+            # Take the last layer state
+            hidden_final = hidden[-1,:,:]
             
-        # 4. Prediction
-        prediction = self.fc(hidden)
-        
-        # Optional: Apply sigmoid if your loss function doesn't do it automatically
-        # prediction = self.sigmoid(prediction)
+        # Apply dropout to the hidden state before the FC layer
+        hidden_final = self.dropout(hidden_final)
+            
+        # 4. Prediction (Logits)
+        # We return logits because we use BCEWithLogitsLoss for numerical stability
+        prediction = self.fc(hidden_final)
         
         return prediction

@@ -1,4 +1,4 @@
-experiment_name: 'sentiment140_sota_baseline'
+experiment_name: 'sentiment140_fedadam_opt'
 seed: 42
 device: "cuda"
 output_dir: "results/nlp/"
@@ -9,23 +9,37 @@ data_params:
   download: true
 
 fl_params:
-  # Bagdasaryan uses the full dataset, but 100-500 is standard for prototyping
-  num_clients: 500
-  clients_per_round: 10
-  num_rounds: 100
+  # 500-1000 is a good pool size for prototyping. 
+  # Sentiment140 has ~660k users naturally; this selects a subset.
+  num_clients: 1000 
+  
+  # Increasing clients per round stabilizes the gradient for the server
+  clients_per_round: 20 
+  
+  # NLP tasks need more rounds. 100 is often too few for LSTM.
+  num_rounds: 200 
 
-  # Standard FedAvg Baseline
+  # OPTIMIZATION: FedAdam is State-of-the-Art for FL NLP
+  # It handles the "sparse" updates of text data better than FedAvg.
   aggregator: 'fedavg'
+  
 
 training_params:
-  # RESEARCH STANDARD: Small batch size for textual data
-  batch_size: 10
-  # RESEARCH STANDARD: 1 Local Epoch is the strict FL definition
+  # Batch size 20-32 is preferred over 10 for cleaner gradients
+  batch_size: 20
+  
+  # Strict FL usually uses 1 local epoch to prevent client drift
   local_epochs: 1
+  
   optimizer: 'sgd'
-  # RESEARCH STANDARD: 0.1 is the reference LR for Sentiment140 (Reddi et al. 2021)
-  lr: 0.01
-  momentum: 0.9
+  
+  # CRITICAL: LSTM + SGD needs a high LR (0.1 - 1.0) in FL settings.
+  # 0.01 is often too slow for clients performing only 1 epoch.
+  lr: 0.1
+  
+  # Keep momentum 0 at the client level to reduce communication overhead 
+  # (momentum buffers double the upload size if transmitted).
+  momentum: 0.0 
   weight_decay: 0.0001
 
 attack_params:
