@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 class LSTMModel(nn.Module):
     def __init__(self, vocab_size: int, embedding_dim: int = 8, hidden_dim: int = 256, num_layers: int = 2):
@@ -16,24 +17,6 @@ class LSTMModel(nn.Module):
         return logits.permute(0, 2, 1)
     
 
-class TextClassifier(nn.Module):
-    def __init__(self, vocab_size, embedding_dim=100, hidden_dim=128, output_dim=2, num_layers=2, pretrained_embeddings=None):
-        super().__init__()
-        
-        # Load weights if provided, otherwise random
-        if pretrained_embeddings is not None:
-            self.embedding = nn.Embedding.from_pretrained(pretrained_embeddings, padding_idx=0, freeze=False)
-        else:
-            self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
-            
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True, dropout=0.2)
-        self.fc = nn.Linear(hidden_dim, output_dim)
-        
-    def forward(self, x):
-        embedded = self.embedding(x)
-        output, (hidden, cell) = self.lstm(embedded)
-        last_hidden = hidden[-1]
-        return self.fc(last_hidden)
     
 class SentimentLSTM(nn.Module):
     """
@@ -49,7 +32,7 @@ class SentimentLSTM(nn.Module):
                  vocab_size, 
                  embedding_dim=100, 
                  hidden_dim=256, 
-                 output_dim=1, 
+                 output_dim=2, 
                  n_layers=2, 
                  bidirectional=False, 
                  dropout=0.5, 
@@ -74,25 +57,15 @@ class SentimentLSTM(nn.Module):
         # 4. Dropout
         self.dropout = nn.Dropout(dropout)
 
-    def load_pretrained_embeddings(self, embeddings, freeze=True):
-        """
-        Loads GloVe vectors and optionally freezes them.
-        
-        In FL, freezing is CRITICAL. 
-        If False: The model update size is ~20MB (50k * 100 floats).
-        If True: The model update size is ~1MB (LSTM weights only).
-        """
-        # Handle size mismatch if vocab changed
+    def load_pretrained_embeddings(self, embeddings, freeze=False):
         if embeddings.shape != self.embedding.weight.shape:
-            print(f"Resize embedding: {self.embedding.weight.shape} -> {embeddings.shape}")
-            self.embedding = nn.Embedding.from_pretrained(embeddings, freeze=freeze, padding_idx=0)
+             # Handle vocab size mismatch safely
+             self.embedding = nn.Embedding.from_pretrained(embeddings, freeze=freeze, padding_idx=0)
         else:
             self.embedding.weight.data.copy_(embeddings)
             if freeze:
                 self.embedding.weight.requires_grad = False
-        
-        state = "Frozen" if freeze else "Trainable"
-        print(f"Embeddings loaded and {state}.")
+
 
     def forward(self, text):
         # text shape: [batch size, seq_len]
@@ -123,3 +96,74 @@ class SentimentLSTM(nn.Module):
         prediction = self.fc(hidden_final)
         
         return prediction
+
+
+def load_glove_embeddings(vocab, glove_path, embedding_dim):
+    """
+    Creates an embedding matrix for our specific vocabulary using GloVe.
+    """
+    print(f"Loading GloVe vectors from {glove_path}...")
+    embeddings_index = {}
+    
+    # 1. Parse the GloVe text file
+    with open(glove_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype='float32')
+            embeddings_index[word] = coefs
+
+    print(f"Found {len(embeddings_index)} word vectors in GloVe.")
+
+    # 2. Create the matrix for our vocab
+    # Initialize with random noise or zeros
+    embedding_matrix = np.zeros((len(vocab.word2idx), embedding_dim))
+    
+    hits = 0
+    misses = 0
+    
+    for word, idx in vocab.word2idx.items():
+        embedding_vector = embeddings_index.get(word)
+        if embedding_vector is not None:
+            # Word found in GloVe
+            embedding_matrix[idx] = embedding_vector
+            hits += 1
+        else:
+            # Word not found (OOV). Leave as zeros or random initialization.
+            # Usually, we initialize <UNK> and <PAD> specifically or leave them.
+            if word == "<UNK>":
+                embedding_matrix[idx] = np.random.normal(scale=0.6, size=(embedding_dim, ))
+            misses += 1
+
+    print(f"Embeddings loaded. Hits: {hits}, Misses: {misses}")
+    return torch.tensor(embedding_matrix, dtype=torch.float)
+
+class SentimentLSTM_GloVe(nn.Module):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, pretrained_embeddings=None, output_dim=1):
+        super(SentimentLSTM_GloVe, self).__init__()
+        
+        # 1. Initialize Embedding Layer
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        
+        # 2. Load Pre-trained weights if provided
+        if pretrained_embeddings is not None:
+            self.embedding.load_state_dict({'weight': pretrained_embeddings})
+            
+            # OPTION A: Freeze embeddings (Faster, less bandwidth in FL, good for small data)
+            self.embedding.weight.requires_grad = False 
+            
+            # OPTION B: Fine-tune embeddings (Better accuracy, but updates huge matrix)
+            # self.embedding.weight.requires_grad = True 
+
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True, bidirectional=True)
+        self.fc = nn.Linear(hidden_dim * 2, output_dim)
+        self.dropout = nn.Dropout(0.5)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        embedded = self.embedding(x)
+        output, (hidden, cell) = self.lstm(embedded)
+        hidden_cat = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
+        dense_out = self.dropout(hidden_cat)
+        out = self.fc(dense_out)
+        return self.sigmoid(out)

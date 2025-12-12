@@ -54,21 +54,19 @@ class FedAvgAggregator(BaseServer):
         # Define Binary Loss separately just in case
         bce_loss = nn.BCEWithLogitsLoss()
 
-        log_shape = True
         with torch.no_grad():
             for inputs, targets in valloader:
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 outputs = self.model(inputs)
                 
-                print(f"outputs shape: {outputs.shape}, targets shape: {targets.shape}") if log_shape else None
-                log_shape = False
-                
+
                 # Handle Hugging Face Output [Batch, Seq, Vocab] -> Take last token
                 if targets.ndim == 1 and outputs.ndim == 3:
                     outputs = outputs[:, :, -1]
 
                 # Case A: NLP Sequence (Shakespeare)
                 if outputs.ndim == 3: 
+                    print("Evaluating NLP Sequence Model")
                     loss_sum += nn.functional.cross_entropy(outputs, targets, ignore_index=0).item()
                     _, preds = torch.max(outputs.data, 1)
                     mask = (targets != 0)
@@ -77,10 +75,10 @@ class FedAvgAggregator(BaseServer):
                     
                 # Case B: Classification
                 else:
-                    # FIX: Detect if Binary (1 Output) or Multi-class (2+ Outputs)
                     if outputs.size(1) == 1:
                         # Binary Classification Logic
                         outputs = outputs.squeeze(1) # [Batch, 1] -> [Batch]
+                        
                         loss_sum += bce_loss(outputs, targets.float()).item()
                         
                         # Apply Sigmoid to get probability -> Threshold at 0.5

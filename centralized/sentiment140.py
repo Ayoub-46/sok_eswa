@@ -191,6 +191,7 @@ class SentimentLSTM_GloVe(nn.Module):
         dense_out = self.dropout(hidden_cat)
         out = self.fc(dense_out)
         return self.sigmoid(out)
+
     
 class SentimentLSTM(nn.Module):
     def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim=1):

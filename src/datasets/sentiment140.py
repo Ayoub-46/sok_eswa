@@ -273,3 +273,10 @@ class Sentiment140Dataset(DatasetAdapter):
     def get_test_loader(self, batch_size: int = 128):
         self.setup()
         return DataLoader(self._test_dataset, batch_size=batch_size, collate_fn=self._collate_fn)
+    
+    def get_embedding_weights(self):
+        self.setup()
+        return self.embedding_weights.clone().detach()
+    def get_vocab_size(self):
+        self.setup()
+        return len(self.word_to_int)

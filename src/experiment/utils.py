@@ -22,7 +22,7 @@ from ..models.mnist import MNISTNet
 from ..models.mnist import EMNIST_CNN 
 from ..models.unet import UNet, FEMNISTAutoencoder
 from ..models.nlp import LSTMModel
-from ..models.nlp import TextClassifier
+from ..models.nlp import SentimentLSTM, SentimentLSTM_GloVe
 
 
 # Core FL Components
@@ -61,13 +61,21 @@ def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Modu
     if dataset_name == 'sentiment140':
         adapter = Sentiment140Dataset(root=data_config.get('root', 'data'))
         adapter.setup()
-        model = TextClassifier(
+        # model = SentimentLSTM_GloVe(
+        #     vocab_size= adapter.get_vocab_size(),
+        #     embedding_dim=100,
+        #     hidden_dim=256,
+        #     output_dim=2,
+        #     pretrained_embeddings= adapter.get_embedding_weights()
+        #     )  
+        model = SentimentLSTM(
             vocab_size=len(adapter.word_to_int), 
             embedding_dim=100, 
-            hidden_dim=128, 
-            output_dim=2,
-            pretrained_embeddings=adapter.embedding_weights
-        )          
+            hidden_dim=256, 
+            output_dim=2,    # MUST BE 2 for CrossEntropyLoss
+            n_layers=2
+        )
+
     elif dataset_name == 'flwr_shakespeare':
         adapter = FlwrShakespeareDataset(root=data_config.get('root', 'data'))
         model = LSTMModel(
@@ -185,7 +193,7 @@ def get_client_instance(
         ignore_index = 0
     else:
         ignore_index = -100
-        
+
     # 1. Define all base arguments for any client 
     base_client_args = {
         'id': client_id,
