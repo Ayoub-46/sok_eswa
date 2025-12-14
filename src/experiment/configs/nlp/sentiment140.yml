@@ -9,17 +9,21 @@ data_params:
   download: true
 
 fl_params:
-  num_clients: 1000 
-  clients_per_round: 20 
+  num_clients: 2000 
+  clients_per_round: 250 
   num_rounds: 200   
+  aggregator: 'fedadam'   
+  server_lr: 0.01       
+  server_betas: [0.9, 0.99]
+  server_tau: 0.001
 
 training_params:
-  batch_size: 20
+  batch_size: 10
   local_epochs: 1  
-  optimizer: 'adam'
-  lr: 0.001
+  optimizer: 'fedavg'
+  lr: 1.0
   momentum: 0.0 
-  weight_decay: 0.0001
+  weight_decay: 0.0
 
 attack_params:
   enabled: false
