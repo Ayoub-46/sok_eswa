@@ -37,7 +37,7 @@ def test_server_eval():
     model = SentimentLSTM(
         vocab_size=vocab_size,
         embedding_dim=100,
-        hidden_dim=256,
+        hidden_dim=100,
         output_dim=2,      
         n_layers=2,
         dropout=0.5

@@ -51,41 +51,57 @@ class FedAvgAggregator(BaseServer):
         
         loss_sum, correct, total, iters = 0.0, 0, 0, 0
         
-        # Define Binary Loss separately just in case
+        # Define Binary Loss separately just in case (for output_dim=1)
         bce_loss = nn.BCEWithLogitsLoss()
 
         with torch.no_grad():
-            for inputs, targets in valloader:
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
-                outputs = self.model(inputs)
+            for batch in valloader:
+                # 1. Unpack Batch (Handle optional lengths)
+                if len(batch) == 3:
+                    inputs, targets, lengths = batch
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
+                    # Move lengths to device for "Manual Indexing" trick
+                    lengths = lengths.to(self.device) 
+                else:
+                    # Fallback for datasets without lengths (e.g. Shakespeare)
+                    inputs, targets = batch
+                    inputs = inputs.to(self.device)
+                    targets = targets.to(self.device)
+                    lengths = None
+
+                # 2. Forward Pass (Pass lengths if available)
+                # Ensure your Model's forward() signature accepts lengths!
+                if lengths is not None:
+                    outputs = self.model(inputs, lengths)
+                else:
+                    outputs = self.model(inputs)
                 
 
-                # Handle Hugging Face Output [Batch, Seq, Vocab] -> Take last token
-                if targets.ndim == 1 and outputs.ndim == 3:
-                    outputs = outputs[:, :, -1]
-
-                # Case A: NLP Sequence (Shakespeare)
+                # 3. Calculate Metrics
+                # Case A: NLP Sequence (Shakespeare/Next Character) [Batch, Seq, Vocab]
                 if outputs.ndim == 3: 
-                    print("Evaluating NLP Sequence Model")
+                    # print("Evaluating NLP Sequence Model") 
                     loss_sum += nn.functional.cross_entropy(outputs, targets, ignore_index=0).item()
                     _, preds = torch.max(outputs.data, 1)
                     mask = (targets != 0)
                     correct += (preds == targets)[mask].sum().item()
                     total += mask.sum().item()
                     
-                # Case B: Classification
+                # Case B: Classification (Sentiment140) [Batch, Classes]
                 else:
                     if outputs.size(1) == 1:
-                        # Binary Classification Logic
+                        # Binary Classification Logic (Sigmoid)
                         outputs = outputs.squeeze(1) # [Batch, 1] -> [Batch]
                         
                         loss_sum += bce_loss(outputs, targets.float()).item()
                         
-                        # Apply Sigmoid to get probability -> Threshold at 0.5
+                        # Threshold at 0.5
                         preds = (torch.sigmoid(outputs) > 0.5).long()
                         correct += (preds == targets).sum().item()
                     else:
-                        # Multi-class Logic (Output_dim=2 for Pos/Neg)
+                        # Multi-class Logic (Softmax/CrossEntropy)
+                        # Assumes self.loss_fn is CrossEntropyLoss
                         loss_sum += self.loss_fn(outputs, targets).item()
                         _, preds = torch.max(outputs.data, 1)
                         correct += (preds == targets).sum().item()

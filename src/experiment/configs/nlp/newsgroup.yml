@@ -1,0 +1,36 @@
+experiment_name: 'newsgroups_benchmark'
+seed: 42
+device: "cuda"
+output_dir: "results/nlp/"
+
+data_params:
+  dataset_name: '20newsgroups'
+  root: 'data/newsgroups'
+  # Research standard: Dirichlet for realistic non-IID
+  strategy: 'dirichlet' 
+  alpha: 0.5  
+  # Crucial: 20 Newsgroups requires longer sequences than Tweets
+  seq_len: 200 
+
+fl_params:
+  num_clients: 100
+  clients_per_round: 10   # 10% participation is standard
+  num_rounds: 100         # Text models converge slower than CNNs
+  aggregator: 'fedavg'    # Start with FedAvg; switch to 'fedadam' if unstable
+
+training_params:
+  batch_size: 32          # Smaller batch size helps generalization
+  local_epochs: 5         # Allow local convergence
+  
+  # OPTION A: SGD (Standard FL Benchmark)
+  optimizer: 'sgd'
+  lr: 0.01                # Drastically reduced from 1.0
+  momentum: 0.9           # Required for SGD on NLP
+  weight_decay: 0.0001   # Regularization to prevent overfitting
+
+  # OPTION B: Adam (Better for LSTMs, but higher comms if optimizer state is shared)
+  # optimizer: 'adam'
+  # lr: 0.001
+
+attack_params:
+  enabled: false

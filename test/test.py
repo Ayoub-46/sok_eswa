@@ -12,7 +12,7 @@ def verify():
     test_loader = adapter.get_test_loader(batch_size=20)
     
     # Get first batch
-    x, y = next(iter(test_loader))
+    x, y, _ = next(iter(test_loader))
     
     print(f"Batch X Shape: {x.shape}") # Should be [20, 25]
     print(f"Batch Y Shape: {y.shape}") # Should be [20]

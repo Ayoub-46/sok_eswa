@@ -13,8 +13,7 @@ from ..datasets.mnist import MNISTDataset
 from ..datasets.femnist import FEMNISTDataset
 from ..datasets.adapter import DatasetAdapter
 from ..datasets.flwr_shakespeare import FlwrShakespeareDataset
-from ..datasets.sentiment140 import Sentiment140Dataset
-
+from ..datasets.newsgroups import NewsgroupsDataset
 # Models
 from ..models.gtsrb import GTSRB_CNN
 from ..models.cifar import CifarNetGN
@@ -22,7 +21,8 @@ from ..models.mnist import MNISTNet
 from ..models.mnist import EMNIST_CNN 
 from ..models.unet import UNet, FEMNISTAutoencoder
 from ..models.nlp import LSTMModel
-from ..models.nlp import SentimentLSTM, SentimentLSTM_GloVe
+from ..models.nlp import SentimentLSTM
+
 
 
 # Core FL Components
@@ -58,24 +58,20 @@ def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Modu
     root = data_config.get('root', 'data')
     download = data_config.get('download', True) 
 
-    if dataset_name == 'sentiment140':
-        adapter = Sentiment140Dataset(root=data_config.get('root', 'data'))
+    if dataset_name == '20newsgroups':
+        adapter = NewsgroupsDataset(root=data_config.get('root', 'data'))
         adapter.setup()
-        # model = SentimentLSTM_GloVe(
-        #     vocab_size= adapter.get_vocab_size(),
-        #     embedding_dim=100,
-        #     hidden_dim=256,
-        #     output_dim=2,
-        #     pretrained_embeddings= adapter.get_embedding_weights()
-        #     )  
+        
+        # Reuse the SentimentLSTM but with 20 output classes
         model = SentimentLSTM(
-            vocab_size=len(adapter.word_to_int), 
+            vocab_size=adapter.get_vocab_size(), 
             embedding_dim=100, 
             hidden_dim=256, 
-            output_dim=2,    # MUST BE 2 for CrossEntropyLoss
-            n_layers=2
+            output_dim=20,    # 20 Classes for Newsgroups
+            n_layers=2,
+            dropout=0.5
         )
-
+        
     elif dataset_name == 'flwr_shakespeare':
         adapter = FlwrShakespeareDataset(root=data_config.get('root', 'data'))
         model = LSTMModel(
