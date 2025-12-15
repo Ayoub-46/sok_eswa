@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 
 class LSTMModel(nn.Module):
@@ -16,7 +17,41 @@ class LSTMModel(nn.Module):
         logits = self.fc(output)
         return logits.permute(0, 2, 1)
     
+class SentimentLSTM_Attention(nn.Module):
+    def __init__(self, vocab_size, embedding_dim=100, hidden_dim=256, output_dim=2, n_layers=2, dropout=0.5, pad_idx=0):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=pad_idx)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=n_layers, bidirectional=True, batch_first=True, dropout=dropout)
+        self.fc = nn.Linear(hidden_dim * 2, output_dim)
+        self.dropout = nn.Dropout(dropout)
 
+    def attention_net(self, lstm_output, final_state):
+        # lstm_output: [batch_size, seq_len, hidden_dim * 2]
+        # final_state: [batch_size, hidden_dim * 2]
+        
+        # Simple Attention: Score = Final_State * H_t
+        hidden = final_state.unsqueeze(2)  # [batch_size, hidden_dim * 2, 1]
+        attn_weights = torch.bmm(lstm_output, hidden).squeeze(2) # [batch_size, seq_len]
+        soft_attn_weights = F.softmax(attn_weights, 1)
+        
+        # Context vector = sum(weights * lstm_output)
+        context = torch.bmm(lstm_output.transpose(1, 2), soft_attn_weights.unsqueeze(2)).squeeze(2)
+        return context
+
+    def forward(self, text):
+        embedded = self.dropout(self.embedding(text))
+        
+        # output: [batch, seq_len, hidden_dim * 2]
+        # hidden: [n_layers * 2, batch, hidden_dim]
+        output, (hidden, cell) = self.lstm(embedded)
+        
+        # Concatenate the final forward and backward hidden states
+        hidden_final = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim=1)
+        
+        # APPLY ATTENTION
+        attn_output = self.attention_net(output, hidden_final)
+        
+        return self.fc(self.dropout(attn_output))
     
 class SentimentLSTM(nn.Module):
     """

@@ -14,6 +14,8 @@ from ..datasets.femnist import FEMNISTDataset
 from ..datasets.adapter import DatasetAdapter
 from ..datasets.flwr_shakespeare import FlwrShakespeareDataset
 from ..datasets.newsgroups import NewsgroupsDataset
+from ..datasets.sentiment140 import Sentiment140Dataset
+
 # Models
 from ..models.gtsrb import GTSRB_CNN
 from ..models.cifar import CifarNetGN
@@ -71,7 +73,17 @@ def get_data_and_model(data_config: Dict) -> Tuple[DatasetAdapter, torch.nn.Modu
             n_layers=2,
             dropout=0.5
         )
-        
+    elif dataset_name == 'sentiment140':
+        adapter = Sentiment140Dataset(root=data_config.get('root', 'data/sentiment140'))
+        adapter.setup()
+        model = SentimentLSTM(
+            vocab_size=adapter.get_vocab_size(),
+            embedding_dim=100,
+            hidden_dim=256,
+            output_dim=2,   # Use 2 for CrossEntropyLoss (0 vs 1)
+            n_layers=2,
+            dropout=0.5
+        )
     elif dataset_name == 'flwr_shakespeare':
         adapter = FlwrShakespeareDataset(root=data_config.get('root', 'data'))
         model = LSTMModel(
