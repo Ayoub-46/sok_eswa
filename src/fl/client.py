@@ -59,7 +59,7 @@ class BenignClient(BaseClient):
         self.optimizer = None
         self.scheduler = None
         self.optimizer_name = optimizer
-        # self._create_optimizer(self.optimizer_name)
+        self.optimizer = None
         
         self.ignore_index = ignore_index
         self.loss_fn = nn.CrossEntropyLoss(ignore_index=self.ignore_index)
@@ -67,6 +67,23 @@ class BenignClient(BaseClient):
     @property
     def model(self) -> torch.nn.Module:
         return self._model
+
+    def _ensure_optimizer(self):
+        """Initializes the optimizer only if it doesn't exist."""
+        if self.optimizer is None:
+            if self.optimizer_name.lower() == "adam":
+                self.optimizer = torch.optim.Adam(
+                    self.model.parameters(), 
+                    lr=self.lr, 
+                    weight_decay=self.weight_decay
+                )
+            else:
+                self.optimizer = torch.optim.SGD(
+                    self.model.parameters(), 
+                    lr=self.lr, 
+                    momentum=0.9, 
+                    weight_decay=self.weight_decay
+                )
 
     def _create_optimizer(self, optimizer: str) -> None:
         if optimizer.lower() == "adam":
@@ -91,7 +108,8 @@ class BenignClient(BaseClient):
 
     def local_train(self, epochs: int, round_idx: int, **kwargs) -> Dict[str, Any]:
         self.model.to(self.device)
-        self._create_optimizer(self.optimizer_name)
+        self._ensure_optimizer()
+        # self.optimizer.to(self.device)
 
         self.model.train()
         train_loss, correct, total = 0.0, 0, 0
@@ -134,8 +152,7 @@ class BenignClient(BaseClient):
         accuracy = correct / total if total > 0 else 0.0
         
         self.model.to("cpu")
-        self.optimizer = None
-        self.scheduler = None
+        # self.optimizer.to("cpu")
         torch.cuda.empty_cache()
 
         metrics = {'loss': avg_loss, 'accuracy': accuracy}

@@ -1,0 +1,48 @@
+experiment_name: 'sentiment140_lstm_optimal'
+seed: 42
+device: "cuda"
+output_dir: "results/nlp/"
+
+data_params:
+  dataset_name: 'sentiment140'
+  root: 'data/sentiment140'
+  download: true
+  strategy: "natural"
+  # GloVe embedding dimension matches the model's expectation
+  embedding_dim: 100 
+
+fl_params:
+  num_clients: 800          # Total clients in simulation
+  clients_per_round: 10     # Reduced from 100 to 50 for faster rounds & better stochasticity
+  num_rounds: 200           # Sufficient for LSTM convergence
+  
+  # FedAdam is superior for NLP/LSTM tasks compared to FedAvg
+  aggregator: 'fedadam'   
+  server_lr: 0.1            # Server-side learning rate (0.1 is standard for FedAdam)
+  server_betas: [0.9, 0.99]
+  server_tau: 0.001         # Controls degree of adaptability
+
+training_params:
+  batch_size: 32            # Standard for text sequences
+  local_epochs: 1           # Keep low to prevent client drift
+  
+  # Adam is generally preferred for LSTMs over SGD
+  optimizer: 'adam'
+  lr: 0.001                 # Standard Adam learning rate
+  weight_decay: 0.0001      # Regularization to prevent overfitting on small local data
+
+model_params:
+  # Explicitly defining model args ensures reproducibility
+  vocab_size: 50000         # Matches the dataset adapter's max_vocab_size
+  embedding_dim: 100        # Matches GloVe 6B 100d
+  hidden_dim: 256           # Robust hidden size for Sentiment140
+  output_dim: 2             # Negative vs Positive
+  n_layers: 2               # 2-layer stacked LSTM
+  dropout: 0.5              # High dropout needed for LSTMs
+  bidirectional: true       # Key for capturing context (e.g., "not good")
+
+attack_params:
+  enabled: false
+
+defense_params:
+  enabled: false

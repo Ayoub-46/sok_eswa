@@ -9,7 +9,6 @@ import os
 # Ensure we can import from src
 sys.path.append(os.getcwd())
 
-# Import the EXACT classes used in FL
 from src.datasets.sentiment140 import Sentiment140Dataset
 from src.models.nlp import SentimentLSTM
 
@@ -28,30 +27,45 @@ def train_centralized():
     dataset = Sentiment140Dataset(root="data/sentiment140")
     dataset.load_datasets()
     
-    # Merge all partitions for centralized training
+    # 2. PREPARE CENTRALIZED SPLIT
+    # We combine all "natural" client partitions into one big training set
+    # (or just use the raw train_dataset if available)
+    
+    print("   Creating training subset...")
+    # Use indices from natural partitions if generated, else use all
+    if not dataset.natural_train_partitions:
+        # Trigger partition generation if empty
+        dataset.get_client_loaders(num_clients=10, strategy="natural")
+
     all_indices = []
-    for user_indices in dataset.train_partitions.values():
+    for user_indices in dataset.natural_train_partitions.values():
         all_indices.extend(user_indices)
     
-    # Train on a substantial subset (e.g. 20k samples) to ensure convergence
-    subset_size = min(len(all_indices), 20000) 
+    # Train on a smaller subset (e.g. 10k) for rapid debugging, 
+    # or all_indices for full performance.
+    subset_size = min(len(all_indices), 10000) 
     central_indices = np.random.choice(all_indices, subset_size, replace=False)
     
-    central_dataset = Subset(dataset.hf_dataset, central_indices)
+    # Access .train_dataset (TensorDataset) directly
+    central_dataset = Subset(dataset.train_dataset, central_indices)
     
     train_loader = DataLoader(
         central_dataset, 
         batch_size=32, 
-        shuffle=True, 
-        collate_fn=dataset._collate_fn
+        shuffle=True
+        # No collate_fn needed for TensorDataset (already padded)
     )
     
     # Test on full test set
     test_loader = dataset.get_test_loader(batch_size=128)
 
-    # 2. INITIALIZE FL MODEL
+    # 3. INITIALIZE FL MODEL
     print("\n[2] Initializing FL Model...")
-    vocab_size = len(dataset.word_to_int)
+    
+    # FIX: Use 'word2idx' (from provided Dataset code) not 'word_to_int'
+    vocab_size = len(dataset.word2idx) 
+    print(f"   Vocabulary Size: {vocab_size}")
+    
     embedding_weights = dataset.get_embedding_weights()
     
     model = SentimentLSTM(
@@ -60,18 +74,21 @@ def train_centralized():
         hidden_dim=256,
         output_dim=2,      
         n_layers=2,
+        bidirectional=True,  # <--- CRITICAL FIX: Enables backward pass signal
         dropout=0.5
     ).to(device)
     
-    model.load_pretrained_embeddings(embedding_weights, freeze=False)
+    if embedding_weights is not None:
+        print("   Loading GloVe embeddings...")
+        model.load_pretrained_embeddings(embedding_weights, freeze=False)
     
-    # 3. SETUP TRAINING
+    # 4. SETUP TRAINING
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001) # Adam is the key!
+    optimizer = optim.Adam(model.parameters(), lr=0.001) 
 
-    print("\n[3] Starting Training Loop (5 Epochs)...")
+    print("\n[3] Starting Training Loop (3 Epochs)...")
     
-    for epoch in range(1, 6):
+    for epoch in range(1, 4):
         model.train()
         total_loss = 0
         correct = 0
@@ -110,7 +127,7 @@ def train_centralized():
         test_acc = 100 * test_correct / test_total
         print(f"Epoch {epoch}: Train Loss={avg_loss:.4f}, Train Acc={train_acc:.2f}%, Test Acc={test_acc:.2f}%")
 
-    # 4. SAVE MODEL
+    # 5. SAVE MODEL
     print(f"\n[4] Saving Model to {OUTPUT_MODEL_PATH}...")
     torch.save(model.state_dict(), OUTPUT_MODEL_PATH)
     print("    ✅ Model Saved.")
