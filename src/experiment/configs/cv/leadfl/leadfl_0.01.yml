@@ -1,0 +1,55 @@
+experiment_name: 'iba_leadfl_0.01_cifar_iid'
+seed: 42
+device: "cuda"
+output_dir: "results/leadfl"
+
+data_params:
+  dataset_name: 'cifar10'
+  root: 'data'
+  download: true
+  strategy: 'iid'
+  alpha: 0.3
+  load_pretrained: false
+  load_model_path: 'src/models/pretrained/cifar10.pth'
+
+fl_params:
+  num_clients: 50
+  clients_per_round: 20 
+  num_rounds: 400
+
+training_params:
+  batch_size: 32
+  local_epochs: 1
+  optimizer: 'sgd'
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.00001
+
+attack_params:
+  enabled: true
+  mode: 'sporadic'
+  sporadic_frequency: 0.25
+  name: "iba"
+  malicious_client_ids: [0, 1, 2, 3, 4] 
+  
+  poison_fraction: 0.25 
+  target_label: 7 
+  attack_start_round: 300 
+  attack_end_round: 350
+  malicious_epochs: 1 
+  trigger:
+    name: 'iba'
+    kwargs:
+      # Hyperparameters for the U-Net generator and its training
+      alpha: 0.2          # Scaling factor for the perturbation
+      lambda_noise: 0.01  # Weight for the stealthiness loss term
+      trigger_epochs: 50   # Epochs to fine-tune the generator each round
+      trigger_lr: 0.01
+
+defense_params:
+  enabled: true # Enable the analysis server
+  name: 'trimmed_mean' # Use Trimmed Mean defense at the server
+  client_defense: leadfl
+  clipping_norm: 5.0
+  alpha: 0.01
+  beta: 0.2 # Fraction of extreme updates to trim from each side
